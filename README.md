@@ -1,2 +1,2 @@
-# machine-learning-exercise
 # تکالیف انجام شده گروه doomed
++ پروژه استعدادیابی ورزش شنا
