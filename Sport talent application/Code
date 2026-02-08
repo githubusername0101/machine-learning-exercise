@@ -1,0 +1,135 @@
+import pandas as pd
+import numpy as np
+import cv2
+import mediapipe as mp
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.preprocessing import LabelEncoder
+
+# ==========================================
+# بخش ۱: استعدادیابی اولیه با داده‌های CSV
+# ==========================================
+class TalentScoutCSV:
+    def __init__(self, csv_path):
+        self.data = pd.read_csv(csv_path)
+        self.model = RandomForestClassifier(n_estimators=100)
+        self.le = LabelEncoder()
+        
+    def train_model(self):
+        # فرض می‌کنیم ستون 'Talent_Level' هدف ماست (0: معمولی، 1: مستعد)
+        # ویژگی‌ها: قد، طول دست (Arm Span)، ظرفیت ریه، سن
+        X = self.data[['Height', 'Arm_Span', 'Lung_Capacity', 'Age']]
+        y = self.data['Talent_Level']
+        
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        self.model.fit(X_train, y_train)
+        print(f"CSV Model Accuracy: {self.model.score(X_test, y_test):.2f}")
+
+    def predict_talent(self, features):
+        # ویژگی‌ها: [Height, Arm_Span, Lung_Capacity, Age]
+        prediction = self.model.predict([features])
+        return "High Potential" if prediction[0] == 1 else "Normal Potential"
+
+# ==========================================
+# بخش ۲: استعدادیابی پیشرفته با پردازش تصویر (Pose Detection)
+# ==========================================
+class PoseAnalyzer:
+    def __init__(self):
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(static_image_mode=True, min_detection_confidence=0.5)
+
+    def analyze_image(self, image_path):
+        image = cv2.imread(image_path)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = self.pose.process(image_rgb)
+        
+        if not results.pose_landmarks:
+            return "No pose detected"
+
+        # استخراج مختصات کلیدی
+        landmarks = results.pose_landmarks.landmark
+        
+        # محاسبه ساده طول دست‌ها (Ape Index) به عنوان مثال
+        # شانه چپ (11) تا مچ چپ (15) + شانه راست (12) تا مچ راست (16)
+        left_shoulder = landmarks[11]
+        right_shoulder = landmarks[12]
+        left_wrist = landmarks[15]
+        right_wrist = landmarks[16]
+        
+        # محاسبه فاصله اقلیدسی تقریبی در تصویر
+        arm_span_ratio = abs(left_wrist.x - right_wrist.x)
+        shoulder_width = abs(left_shoulder.x - right_shoulder.x)
+        
+        return self.recommend_stroke(arm_span_ratio, shoulder_width)
+
+    def recommend_stroke(self, arm_span, shoulder_width):
+        # منطق ساده برای توصیه رشته (در عمل بسیار پیچیده‌تر است)
+        ratio = arm_span / shoulder_width if shoulder_width > 0 else 0
+        
+        if ratio > 2.5:
+            return "Recommendation: Butterfly or Freestyle (Great Reach)"
+        elif ratio > 2.0:
+            return "Recommendation: Backstroke"
+        else:
+            return "Recommendation: Breaststroke (Power based)"
+
+# ==========================================
+# بخش ۳: پیش‌بینی نتیجه مسابقه (Race Prediction)
+# ==========================================
+class RacePredictor:
+    def __init__(self, csv_path):
+        self.data = pd.read_csv(csv_path)
+        self.model = RandomForestRegressor() # پیش‌بینی زمان مسابقه
+
+    def train_predictor(self):
+        # فرض: پیش‌بینی زمان 100 متر آزاد
+        X = self.data[['Height', 'Arm_Span', 'VO2_Max', 'Technique_Score']]
+        y = self.data['100m_Freestyle_Time']
+        self.model.fit(X, y)
+
+    def simulate_race(self, swimmer1_stats, swimmer2_stats):
+        time1 = self.model.predict([swimmer1_stats])[0]
+        time2 = self.model.predict([swimmer2_stats])[0]
+        
+        winner = "Swimmer 1" if time1 < time2 else "Swimmer 2"
+        diff = abs(time1 - time2)
+        
+        return f"Winner: {winner} by {diff:.2f} seconds gap."
+
+# ==========================================
+# اجرای یکپارچه (Main Execution)
+# ==========================================
+if __name__ == "__main__":
+    # ایجاد فایل CSV مصنوعی برای تست
+    data = {
+        'Height': np.random.randint(160, 200, 100),
+        'Arm_Span': np.random.randint(160, 210, 100),
+        'Lung_Capacity': np.random.uniform(4.0, 8.0, 100),
+        'Age': np.random.randint(10, 25, 100),
+        'Talent_Level': np.random.randint(0, 2, 100),
+        'VO2_Max': np.random.randint(40, 70, 100),
+        'Technique_Score': np.random.randint(1, 10, 100),
+        '100m_Freestyle_Time': np.random.uniform(47.0, 60.0, 100)
+    }
+    df = pd.DataFrame(data)
+    df.to_csv('swimming.csv', index=False)
+
+    print("--- Stage 1: CSV Analysis ---")
+    scout = TalentScoutCSV('swimming.csv')
+    scout.train_model()
+    # تست برای یک فرد جدید: [Height=185, Span=195, Lung=7.2, Age=18]
+    print(scout.predict_talent([185, 195, 7.2, 18]))
+
+    print("\n--- Stage 2: Pose Detection Recommendation ---")
+    # توجه: برای اجرای این بخش نیاز به یک فایل تصویر واقعی دارید
+    # vision_analyzer = PoseAnalyzer()
+    # print(vision_analyzer.analyze_image('swimmer_pose.jpg'))
+    print("Pose Analysis Module Loaded (Requires actual image input)")
+
+    print("\n--- Stage 3: Race Prediction ---")
+    race = RacePredictor('swimming.csv')
+    race.train_predictor()
+    # مقایسه دو شناگر
+    swimmer_A = [190, 200, 65, 9] # قد بلند، تکنیک عالی
+    swimmer_B = [175, 180, 55, 7] # قد متوسط، تکنیک متوسط
+    print(race.simulate_race(swimmer_A, swimmer_B))
